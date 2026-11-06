@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Stream Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#131c2e; --panel2:#18233a; --border:#25324d;
+    --text:#e6ebf5; --muted:#8c9bb8; --accent:#4f8cff; --good:#34d399; --bad:#f87171; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+  /* Sidebar */
+  aside{width:270px;background:var(--panel);border-right:1px solid var(--border);padding:22px 18px;display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .brand{font-size:1.15rem;font-weight:700;display:flex;gap:10px;align-items:center}
+  .brand span.logo{background:linear-gradient(135deg,#4f8cff,#7c5cff);width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+  nav button{width:100%;text-align:left;background:none;border:none;color:var(--muted);padding:10px 12px;border-radius:10px;font-size:.95rem;cursor:pointer;margin-bottom:4px}
+  nav button:hover{background:var(--panel2);color:var(--text)}
+  nav button.active{background:var(--accent);color:#fff;font-weight:600}
+  .status{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:.82rem}
+  .status div{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted)}
+  .status b{color:var(--text);font-weight:600}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--good)}
+  .filters{display:flex;flex-direction:column;gap:12px}
+  .filters h4{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  label{font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px}
+  select,input[type=date],input[type=time]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:.85rem}
+  .checks label{display:flex;align-items:center;gap:8px;color:var(--text);font-size:.85rem;margin:3px 0;cursor:pointer}
+  .swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
+  /* Main */
+  main{flex:1;padding:26px 32px;min-width:0}
+  .page{display:none}.page.active{display:block}
+  header.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;flex-wrap:wrap;gap:12px}
+  h1{font-size:1.6rem}
+  .sub{color:var(--muted);font-size:.9rem;margin-top:2px}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:rgba(248,113,113,.12);color:var(--bad);border:1px solid rgba(248,113,113,.4);padding:6px 12px;border-radius:999px;font-size:.8rem;font-weight:700}
+  .badge.paused{background:rgba(251,191,36,.12);color:var(--warn);border-color:rgba(251,191,36,.4)}
+  .pulse{width:9px;height:9px;border-radius:50%;background:currentColor;animation:pulse 1.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .grid{display:grid;gap:16px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+  .card h3{font-size:.85rem;color:var(--muted);font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .kpi .val{font-size:1.9rem;font-weight:700}
+  .kpi .val small{font-size:.9rem;color:var(--muted);font-weight:500;margin-left:4px}
+  .delta{font-size:.8rem;margin-top:4px}
+  .up{color:var(--good)}.down{color:var(--bad)}.flat{color:var(--muted)}
+  .two{grid-template-columns:2fr 1fr;margin-bottom:18px}
+  .two.even{grid-template-columns:1fr 1fr}
+  @media(max-width:1000px){.two{grid-template-columns:1fr}aside{display:none}}
+  .chartbox{position:relative;height:340px}
+  .chartbox.small{height:260px}
+  table{width:100%;border-collapse:collapse;font-size:.83rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  tbody tr:hover{background:var(--panel2)}
+  .scroll{max-height:290px;overflow-y:auto}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border)}
+  .tabs button{background:none;border:none;color:var(--muted);padding:10px 16px;cursor:pointer;font-size:.9rem;border-bottom:2px solid transparent}
+  .tabs button.active{color:var(--accent);border-color:var(--accent);font-weight:600}
+  .tab{display:none}.tab.active{display:block}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:.85rem;font-weight:600;cursor:pointer}
+  .btn.alt{background:var(--panel2);border:1px solid var(--border);color:var(--text)}
+  .btn:hover{filter:brightness(1.12)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .empty{text-align:center;color:var(--muted);padding:40px 10px}
+  .pager{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:.82rem;color:var(--muted)}
+  .about p,.about li{line-height:1.65;color:#cbd5e8;font-size:.93rem}
+  .about h2{margin:6px 0 10px;font-size:1.1rem}
+  .about ul{margin-left:20px}
+  .pipe{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+  .pipe span.node{background:var(--panel2);border:1px solid var(--border);padding:10px 14px;border-radius:10px;font-size:.85rem;font-weight:600}
+  .pipe span.arrow{color:var(--accent)}
+  code{background:var(--bg);padding:2px 6px;border-radius:5px;font-size:.85em}
+  .note{background:rgba(79,140,255,.1);border:1px solid rgba(79,140,255,.35);color:#b9d0ff;padding:10px 14px;border-radius:10px;font-size:.82rem;margin-bottom:16px}
+  .toast{position:fixed;bottom:22px;right:22px;background:var(--panel2);border:1px solid var(--border);padding:12px 18px;border-radius:10px;font-size:.88rem;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span class="logo">⛅</span> Weather Stream</div>
+
+  <nav>
+    <button class="active" data-page="live">🔴 Live Dashboard</button>
+    <button data-page="history">📊 History</button>
+    <button data-page="about">ℹ️ About</button>
+  </nav>
+
+  <div class="status">
+    <div><span><span class="dot"></span>Kafka</span><b id="stKafka">Simulated</b></div>
+    <div><span><span class="dot"></span>MongoDB</span><b id="stMongo">Simulated</b></div>
+    <div><span>Last message</span><b id="stLast">--:--:--</b></div>
+    <div><span>Messages</span><b id="stCount">0</b></div>
+  </div>
+
+  <!-- Live filters -->
+  <div class="filters" id="liveFilters">
+    <h4>Live controls</h4>
+    <div><label>Metric</label><select id="liveMetric"></select></div>
+    <div class="checks"><label>Cities</label><div id="liveCities"></div></div>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="pause"> Pause stream</label>
+  </div>
+
+  <!-- History filters -->
+  <div class="filters" id="histFilters" style="display:none">
+    <h4>History filters</h4>
+    <div><label>Metric</label><select id="hMetric"></select></div>
+    <div class="checks"><label>Cities</label><div id="hCities"></div></div>
+    <div><label>From</label><input type="date" id="hFrom"></div>
+    <div><label>To</label><input type="date" id="hTo"></div>
+    <div><label>Granularity</label>
+      <select id="hGran">
+        <option value="0">Raw readings</option>
+        <option value="15">15-minute average</option>
+        <option value="60">1-hour average</option>
+      </select>
+    </div>
+  </div>
+</aside>
+
+<main>
+<!-- ============ LIVE ============ -->
+<section class="page active" id="page-live">
+  <header class="top">
+    <div>
+      <h1>Live Dashboard</h1>
+      <div class="sub">Last updated <b id="lastUpd">--</b> · next refresh in <b id="countdown">15</b>s</div>
+    </div>
+    <span class="badge" id="liveBadge"><span class="pulse"></span> LIVE</span>
+  </header>
+
+  <div class="note">Demo mode: values are simulated in the browser. Replace <code>fetchLive()</code> in the script with a call to your Kafka-backed endpoint when the backend is ready.</div>
+
+  <div class="grid kpis" id="kpis"></div>
+
+  <div class="grid two">
+    <div class="card"><h3 id="liveChartTitle">Rolling stream</h3><div class="chartbox"><canvas id="liveChart"></canvas></div></div>
+    <div class="card"><h3>City comparison (latest)</h3><div class="chartbox"><canvas id="barChart"></canvas></div></div>
+  </div>
+
+  <div class="card">
+    <h3>Recent messages (last 10)</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>timestamp</th><th>sensor_id</th><th>metric_type</th><th>value</th></tr></thead>
+      <tbody id="recent"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ HISTORY ============ -->
+<section class="page" id="page-history">
+  <header class="top">
+    <div><h1>Historical Data</h1><div class="sub">Everything collected so far, filtered by the sidebar</div></div>
+    <div class="row">
+      <button class="btn alt" onclick="exportCSV()">⬇ CSV</button>
+      <button class="btn alt" onclick="exportXLSX()">⬇ Excel</button>
+      <button class="btn alt" onclick="exportPDF()">⬇ PDF</button>
+      <button class="btn alt" onclick="exportPNG()">⬇ PNG</button>
+    </div>
+  </header>
+
+  <div class="grid kpis" id="hStats"></div>
+
+  <div class="tabs">
+    <button class="active" data-tab="tChart">Chart</button>
+    <button data-tab="tTable">Table</button>
+    <button data-tab="tStats">Statistics</button>
+  </div>
+
+  <div class="tab active" id="tChart"><div class="card"><div class="chartbox" style="height:400px"><canvas id="histChart"></canvas></div></div></div>
+
+  <div class="tab" id="tTable"><div class="card">
+    <div class="scroll" style="max-height:480px"><table>
+      <thead><tr><th>timestamp</th><th>sensor_id</th><th>metric_type</th><th>value</th></tr></thead>
+      <tbody id="histBody"></tbody>
+    </table></div>
+    <div class="pager">
+      <span id="pageInfo"></span>
+      <div class="row"><button class="btn alt" id="prev">‹ Prev</button><button class="btn alt" id="next">Next ›</button></div>
+    </div>
+  </div></div>
+
+  <div class="tab" id="tStats"><div class="grid two even">
+    <div class="card"><h3>Average by city</h3><div class="chartbox small"><canvas id="avgChart"></canvas></div></div>
+    <div class="card"><h3>Average by hour of day</h3><div class="chartbox small"><canvas id="hourChart"></canvas></div></div>
+  </div></div>
+</section>
+
+<!-- ============ ABOUT ============ -->
+<section class="page about" id="page-about">
+  <header class="top"><div><h1>About this project</h1><div class="sub">API, pipeline and significance</div></div></header>
+  <div class="grid">
+    <div class="card"><h2>🌐 API used</h2>
+      <p>Weather data comes from <b>WeatherAPI.com</b> (<code>current.json</code> endpoint). Each call returns temperature, humidity, wind, pressure and more for one city. The producer splits every response into one message per metric.</p>
+    </div>
+    <div class="card"><h2>🔧 Pipeline implemented</h2>
+      <div class="pipe">
+        <span class="node">WeatherAPI</span><span class="arrow">→</span>
+        <span class="node">producer.py</span><span class="arrow">→</span>
+        <span class="node">Kafka</span><span class="arrow">→</span>
+        <span class="node">Spark Streaming</span><span class="arrow">→</span>
+        <span class="node">MongoDB Atlas</span><span class="arrow">→</span>
+        <span class="node">Streamlit / UI</span>
+      </div>
+      <ul>
+        <li>Kafka carries live readings; the Live page consumes them every 15 seconds.</li>
+        <li>Spark parses, validates and aggregates the stream into time windows.</li>
+        <li>MongoDB Atlas stores raw and aggregated data for the History page.</li>
+      </ul>
+    </div>
+    <div class="card"><h2>🧾 Message schema</h2>
+      <table><thead><tr><th>Field</th><th>Type</th><th>Example</th></tr></thead><tbody>
+        <tr><td>timestamp</td><td>ISO 8601 string</td><td>2026-10-31T23:04:00+08:00</td></tr>
+        <tr><td>value</td><td>number</td><td>29.4</td></tr>
+        <tr><td>metric_type</td><td>string</td><td>temperature_c</td></tr>
+        <tr><td>sensor_id</td><td>string</td><td>manila</td></tr>
+      </tbody></table>
+    </div>
+    <div class="card"><h2>🎯 Significance of the dashboard</h2>
+      <p>The dashboard turns raw weather readings into something people can act on: spotting heat spikes, comparing cities, and seeing how conditions trend over hours or days. Separating the live and historical views also shows how a streaming system serves both immediate monitoring and long-term analysis, a pattern that applies to any IoT or sensor workload.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===================== CONFIG ===================== */
+const REFRESH_SECONDS = 15;
+const CITIES = ["Quezon City","Manila","Cebu","Davao"];
+const COLORS = {"Quezon City":"#4f8cff","Manila":"#34d399","Cebu":"#fbbf24","Davao":"#f472b6"};
+const METRICS = {
+  temperature_c:{label:"Temperature",unit:"°C",base:30,amp:3,noise:.35,dec:1},
+  humidity_pct:{label:"Humidity",unit:"%",base:74,amp:9,noise:.8,dec:0},
+  wind_kph:{label:"Wind speed",unit:"kph",base:12,amp:4,noise:1,dec:1},
+  pressure_mb:{label:"Pressure",unit:"mb",base:1010,amp:3,noise:.3,dec:1}
+};
+const CITY_OFFSET = {"Quezon City":0,"Manila":.6,"Cebu":-.4,"Davao":.9};
+const BUFFER_MAX = 200;
+
+/* ===================== DATA (simulated) ===================== */
+let allRows = [];      // history store (stands in for MongoDB)
+let liveBuf = {};      // key -> [{t, v}]
+let msgCount = 0;
+let recentMsgs = [];
+
+function genValue(city, metric, date){
+  const m = METRICS[metric];
+  const hours = date.getHours() + date.getMinutes()/60;
+  const sign = (metric === "humidity_pct") ? -1 : 1;
+  const wave = Math.sin((hours-9)/24*2*Math.PI) * m.amp * sign;
+  const off = CITY_OFFSET[city] * (m.amp/3);
+  const v = m.base + wave + off + (Math.random()-.5)*2*m.noise;
+  return +v.toFixed(m.dec);
+}
+function sensorId(c){ return c.toLowerCase().replace(/\s+/g,"_"); }
+function makeRow(city, metric, date){
+  return {timestamp:date.toISOString(), value:genValue(city,metric,date), metric_type:metric, sensor_id:city, _t:date.getTime()};
+}
+function seed(){
+  const now = Date.now(), step = 5*60*1000, span = 6*60*60*1000;
+  for(let t = now - span; t <= now; t += step){
+    const d = new Date(t);
+    CITIES.forEach(c => Object.keys(METRICS).forEach(m => allRows.push(makeRow(c,m,d))));
+  }
+  CITIES.forEach(c => Object.keys(METRICS).forEach(m => {
+    liveBuf[c+"|"+m] = allRows.filter(r=>r.sensor_id===c&&r.metric_type===m).slice(-30).map(r=>({t:r._t,v:r.value}));
+  }));
+}
+
+/* Replace this with a real fetch() to your backend later */
+function fetchLive(){
+  const d = new Date(), out = [];
+  CITIES.forEach(c => Object.keys(METRICS).forEach(m => out.push(makeRow(c,m,d))));
+  return out;
+}
+
+/* ===================== HELPERS ===================== */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const fmtTime = t => new Date(t).toLocaleTimeString("en-GB");
+const fmtDT = t => new Date(t).toLocaleString("en-GB",{hour12:false});
+const metricLabel = m => `${METRICS[m].label} (${METRICS[m].unit})`;
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2400); }
+function chartDefaults(){
+  Chart.defaults.color = "#8c9bb8";
+  Chart.defaults.borderColor = "#25324d";
+  Chart.defaults.font.family = "Segoe UI, system-ui, sans-serif";
+}
+function checkedCities(container){ return $$(`${container} input:checked`).map(i=>i.value); }
+
+/* ===================== SIDEBAR SETUP ===================== */
+function buildFilters(){
+  Object.keys(METRICS).forEach(m=>{
+    ["#liveMetric","#hMetric"].forEach(sel=>{
+      const o=document.createElement("option"); o.value=m; o.textContent=metricLabel(m); $(sel).appendChild(o);
+    });
+  });
+  ["#liveCities","#hCities"].forEach(sel=>{
+    CITIES.forEach(c=>{
+      const l=document.createElement("label");
+      l.innerHTML=`<input type="checkbox" value="${c}" checked><span class="swatch" style="background:${COLORS[c]}"></span>${c}`;
+      $(sel).appendChild(l);
+    });
+  });
+  const today = new Date(), iso = d => d.toISOString().slice(0,10);
+  $("#hTo").value = iso(today);
+  $("#hFrom").value = iso(new Date(today.getTime()-24*3600*1000));
+}
+
+/* ===================== NAVIGATION ===================== */
+function showPage(p){
+  $$("nav button").forEach(b=>b.classList.toggle("active", b.dataset.page===p));
+  $$(".page").forEach(s=>s.classList.toggle("active", s.id==="page-"+p));
+  $("#liveFilters").style.display = p==="live" ? "flex":"none";
+  $("#histFilters").style.display = p==="history" ? "flex":"none";
+  if(p==="history") renderHistory();
+  if(p==="live") renderLive();
+}
+$$("nav button").forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+$$(".tabs button").forEach(b=>b.onclick=()=>{
+  $$(".tabs button").forEach(x=>x.classList.toggle("active",x===b));
+  $$(".tab").forEach(t=>t.classList.toggle("active",t.id===b.dataset.tab));
+});
+
+/* ===================== LIVE PAGE ===================== */
+let liveChart, barChart, cdLeft = REFRESH_SECONDS;
+
+function initLiveCharts(){
+  liveChart = new Chart($("#liveChart"),{
+    type:"line", data:{labels:[],datasets:[]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:"index",intersect:false},
+      elements:{point:{radius:2},line:{tension:.3,borderWidth:2}},
+      plugins:{legend:{position:"bottom"}}}
+  });
+  barChart = new Chart($("#barChart"),{
+    type:"bar", data:{labels:[],datasets:[{data:[],backgroundColor:[]}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:false}}}
+  });
+}
+
+function renderLive(){
+  const metric = $("#liveMetric").value, cities = checkedCities("#liveCities");
+  const m = METRICS[metric];
+
+  // KPI cards
+  const k = $("#kpis"); k.innerHTML = "";
+  if(!cities.length){ k.innerHTML = `<div class="card empty" style="grid-column:1/-1">Select at least one city.</div>`; }
+  cities.forEach(c=>{
+    const buf = liveBuf[c+"|"+metric] || [];
+    const cur = buf.length ? buf[buf.length-1].v : null;
+    const prev = buf.length>1 ? buf[buf.length-2].v : cur;
+    const diff = cur!==null ? +(cur-prev).toFixed(m.dec+1) : 0;
+    const cls = diff>0?"up":diff<0?"down":"flat", arrow = diff>0?"▲":diff<0?"▼":"■";
+    k.insertAdjacentHTML("beforeend",`
+      <div class="card kpi"><h3><span class="swatch" style="background:${COLORS[c]}"></span>${c}</h3>
+      <div class="val">${cur===null?"–":cur.toFixed(m.dec)}<small>${m.unit}</small></div>
+      <div class="delta ${cls}">${arrow} ${Math.abs(diff)} vs previous</div></div>`);
+  });
+
+  // Line chart
+  $("#liveChartTitle").textContent = `${metricLabel(metric)} · rolling stream`;
+  const ref = cities.length ? (liveBuf[cities[0]+"|"+metric]||[]) : [];
+  liveChart.data.labels = ref.map(p=>fmtTime(p.t));
+  liveChart.data.datasets = cities.map(c=>({
+    label:c, data:(liveBuf[c+"|"+metric]||[]).map(p=>p.v),
+    borderColor:COLORS[c], backgroundColor:COLORS[c]
+  }));
+  liveChart.update();
+
+  // Bar chart
+  barChart.data.labels = cities;
+  barChart.data.datasets[0].data = cities.map(c=>{const b=liveBuf[c+"|"+metric]||[];return b.length?b[b.length-1].v:0});
+  barChart.data.datasets[0].backgroundColor = cities.map(c=>COLORS[c]);
+  barChart.update();
+
+  // Recent table
+  const body = $("#recent");
+  if(!recentMsgs.length){ body.innerHTML = `<tr><td colspan="4" class="empty">Waiting for data… is the producer running?</td></tr>`; }
+  else body.innerHTML = recentMsgs.slice(0,10).map(r=>
+    `<tr><td>${r.timestamp}</td><td>${r.sensor_id}</td><td>${r.metric_type}</td><td>${r.value}</td></tr>`).join("");
+}
+
+function tick(){
+  if($("#pause").checked) return;
+  const rows = fetchLive();
+  rows.forEach(r=>{
+    allRows.push(r); msgCount++;
+    const key = r.sensor_id+"|"+r.metric_type;
+    (liveBuf[key] = liveBuf[key]||[]).push({t:r._t,v:r.value});
+    if(liveBuf[key].length>BUFFER_MAX) liveBuf[key].shift();
+  });
+  recentMsgs = rows.concat(recentMsgs).slice(0,50);
+  $("#stCount").textContent = msgCount;
+  $("#stLast").textContent = fmtTime(Date.now());
+  $("#lastUpd").textContent = fmtTime(Date.now());
+  if($("#page-live").classList.contains("active")) renderLive();
+}
+
+$("#pause").onchange = e=>{
+  const b = $("#liveBadge");
+  b.classList.toggle("paused", e.target.checked);
+  b.innerHTML = e.target.checked ? "⏸ PAUSED" : `<span class="pulse"></span> LIVE`;
+};
+["#liveMetric","#liveCities"].forEach(s=>$(s).addEventListener("change",renderLive));
+
+/* ===================== HISTORY PAGE ===================== */
+let histChart, avgChart, hourChart, histData = [], histPage = 1;
+const PAGE_SIZE = 25;
+
+function initHistCharts(){
+  histChart = new Chart($("#histChart"),{type:"line",data:{labels:[],datasets:[]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
+      elements:{point:{radius:0,hitRadius:8},line:{tension:.25,borderWidth:2}},plugins:{legend:{position:"bottom"}},
+      scales:{x:{ticks:{maxTicksLimit:10}}}}});
+  avgChart = new Chart($("#avgChart"),{type:"bar",data:{labels:[],datasets:[{data:[],backgroundColor:[]}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  hourChart = new Chart($("#hourChart"),{type:"line",data:{labels:[],datasets:[{data:[],borderColor:"#4f8cff",backgroundColor:"rgba(79,140,255,.2)",fill:true,tension:.3}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+}
+
+/* stands in for query_historical_data() */
+function queryHistorical(){
+  const metric = $("#hMetric").value, cities = checkedCities("#hCities");
+  const from = new Date($("#hFrom").value+"T00:00:00").getTime();
+  const to = new Date($("#hTo").value+"T23:59:59").getTime();
+  const gran = +$("#hGran").value;
+  let rows = allRows.filter(r=>r.metric_type===metric && cities.includes(r.sensor_id) && r._t>=from && r._t<=to);
+  if(gran>0){
+    const size = gran*60*1000, buckets = {};
+    rows.forEach(r=>{
+      const b = Math.floor(r._t/size)*size, k = r.sensor_id+"|"+b;
+      (buckets[k] = buckets[k] || {sensor_id:r.sensor_id,_t:b,vals:[]}).vals.push(r.value);
+    });
+    rows = Object.values(buckets).map(o=>({
+      timestamp:new Date(o._t).toISOString(), _t:o._t, sensor_id:o.sensor_id, metric_type:metric,
+      value:+(o.vals.reduce((a,b)=>a+b,0)/o.vals.length).toFixed(2)
+    }));
+  }
+  return rows.sort((a,b)=>a._t-b._t);
+}
+
+function renderHistory(){
+  const metric = $("#hMetric").value, m = METRICS[metric];
+  histData = queryHistorical(); histPage = 1;
+  const vals = histData.map(r=>r.value);
+  const s = $("#hStats");
+  if(!vals.length){
+    s.innerHTML = `<div class="card empty" style="grid-column:1/-1">No data for these filters. Try widening the date range or selecting more cities.</div>`;
+  } else {
+    const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+    const stat = (t,v)=>`<div class="card kpi"><h3>${t}</h3><div class="val" style="font-size:1.5rem">${v}</div></div>`;
+    s.innerHTML = stat("Records",histData.length.toLocaleString())
+      + stat("Minimum",Math.min(...vals).toFixed(m.dec+1)+" "+m.unit)
+      + stat("Maximum",Math.max(...vals).toFixed(m.dec+1)+" "+m.unit)
+      + stat("Average",mean.toFixed(m.dec+1)+" "+m.unit)
+      + stat("Span",`${fmtDT(histData[0]._t).slice(0,10)} → ${fmtDT(histData[histData.length-1]._t).slice(0,10)}`);
+  }
+  renderHistChart(); renderHistTable(); renderStats();
+}
+
+function renderHistChart(){
+  const cities = [...new Set(histData.map(r=>r.sensor_id))];
+  const times = [...new Set(histData.map(r=>r._t))].sort((a,b)=>a-b);
+  histChart.data.labels = times.map(t=>fmtDT(t).slice(0,17));
+  histChart.data.datasets = cities.map(c=>{
+    const map = new Map(histData.filter(r=>r.sensor_id===c).map(r=>[r._t,r.value]));
+    return {label:c,data:times.map(t=>map.has(t)?map.get(t):null),borderColor:COLORS[c],backgroundColor:COLORS[c],spanGaps:true};
+  });
+  histChart.update();
+}
+
+function renderHistTable(){
+  const rows = [...histData].reverse();
+  const pages = Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  histPage = Math.min(histPage,pages);
+  const slice = rows.slice((histPage-1)*PAGE_SIZE, histPage*PAGE_SIZE);
+  $("#histBody").innerHTML = slice.length ? slice.map(r=>
+    `<tr><td>${r.timestamp}</td><td>${r.sensor_id}</td><td>${r.metric_type}</td><td>${r.value}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty">No data for these filters.</td></tr>`;
+  $("#pageInfo").textContent = `Page ${histPage} of ${pages} · ${rows.length.toLocaleString()} rows`;
+  $("#prev").disabled = histPage<=1; $("#next").disabled = histPage>=pages;
+}
+$("#prev").onclick=()=>{histPage--;renderHistTable()};
+$("#next").onclick=()=>{histPage++;renderHistTable()};
+
+function renderStats(){
+  const cities = [...new Set(histData.map(r=>r.sensor_id))];
+  avgChart.data.labels = cities;
+  avgChart.data.datasets[0].data = cities.map(c=>{const v=histData.filter(r=>r.sensor_id===c).map(r=>r.value);return +(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2)});
+  avgChart.data.datasets[0].backgroundColor = cities.map(c=>COLORS[c]);
+  avgChart.update();
+
+  const byHour = Array.from({length:24},()=>[]);
+  histData.forEach(r=>byHour[new Date(r._t).getHours()].push(r.value));
+  hourChart.data.labels = byHour.map((_,h)=>String(h).padStart(2,"0")+":00");
+  hourChart.data.datasets[0].data = byHour.map(a=>a.length?+(a.reduce((x,y)=>x+y,0)/a.length).toFixed(2):null);
+  hourChart.update();
+}
+
+["#hMetric","#hCities","#hFrom","#hTo","#hGran"].forEach(s=>$(s).addEventListener("change",renderHistory));
+
+/* ===================== EXPORTS ===================== */
+function download(blob,name){ const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+const exportRows = () => histData.map(r=>({timestamp:r.timestamp,value:r.value,metric_type:r.metric_type,sensor_id:r.sensor_id}));
+const stamp = () => new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+
+function exportCSV(){
+  if(!histData.length) return toast("Nothing to export");
+  const rows = exportRows(), head = Object.keys(rows[0]).join(",");
+  const csv = [head,...rows.map(r=>Object.values(r).join(","))].join("\n");
+  download(new Blob([csv],{type:"text/csv"}),`weather_history_${stamp()}.csv`); toast("CSV downloaded");
+}
+function exportXLSX(){
+  if(!histData.length) return toast("Nothing to export");
+  const vals = histData.map(r=>r.value), mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows()), "Data");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    {stat:"Metric",value:$("#hMetric").value},{stat:"Records",value:vals.length},
+    {stat:"Min",value:Math.min(...vals)},{stat:"Max",value:Math.max(...vals)},{stat:"Average",value:+mean.toFixed(3)}
+  ]), "Summary");
+  XLSX.writeFile(wb,`weather_history_${stamp()}.xlsx`); toast("Excel downloaded");
+}
+function exportPNG(){
+  if(!histData.length) return toast("Nothing to export");
+  const src = $("#histChart"), c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const x = c.getContext("2d"); x.fillStyle="#0f172a"; x.fillRect(0,0,c.width,c.height); x.drawImage(src,0,0);
+  c.toBlob(b=>{download(b,`weather_chart_${stamp()}.png`); toast("PNG downloaded");});
+}
+function exportPDF(){
+  if(!histData.length) return toast("Nothing to export");
+  const {jsPDF} = window.jspdf, doc = new jsPDF(), metric=$("#hMetric").value;
+  const vals = histData.map(r=>r.value), mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+  doc.setFontSize(18); doc.text("Weather Stream - History Report",14,18);
+  doc.setFontSize(10);
+  doc.text(`Metric: ${metricLabel(metric)}`,14,28);
+  doc.text(`Cities: ${checkedCities("#hCities").join(", ")}`,14,34);
+  doc.text(`Range: ${$("#hFrom").value} to ${$("#hTo").value}`,14,40);
+  doc.text(`Records: ${vals.length}   Min: ${Math.min(...vals)}   Max: ${Math.max(...vals)}   Avg: ${mean.toFixed(2)}`,14,46);
+  doc.addImage($("#histChart").toDataURL("image/png"),"PNG",14,52,182,85);
+  doc.setFontSize(9); let y=146;
+  doc.text("timestamp",14,y); doc.text("sensor_id",84,y); doc.text("value",144,y); y+=6;
+  histData.slice(-25).reverse().forEach(r=>{
+    doc.text(r.timestamp,14,y); doc.text(r.sensor_id,84,y); doc.text(String(r.value),144,y); y+=6;
+  });
+  doc.save(`weather_report_${stamp()}.pdf`); toast("PDF downloaded");
+}
+
+/* ===================== INIT ===================== */
+chartDefaults(); buildFilters(); seed(); initLiveCharts(); initHistCharts();
+msgCount = 0; recentMsgs = [];
+tick();
+renderLive();
+setInterval(()=>{
+  if($("#pause").checked){ return; }
+  cdLeft--; if(cdLeft<=0){ cdLeft = REFRESH_SECONDS; tick(); }
+  $("#countdown").textContent = cdLeft;
+},1000);
+</script>
+</body>
+</html>
